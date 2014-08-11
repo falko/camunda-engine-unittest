@@ -12,8 +12,14 @@
  */
 package org.camunda.bpm.unittest;
 
+import java.util.List;
+
+import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.TaskService;
+import org.camunda.bpm.engine.runtime.EventSubscription;
+import org.camunda.bpm.engine.runtime.Incident;
+import org.camunda.bpm.engine.runtime.Job;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.Deployment;
@@ -38,21 +44,41 @@ public class SimpleTestCase {
   public void shouldExecuteProcess() {
 
     RuntimeService runtimeService = rule.getRuntimeService();
-    TaskService taskService = rule.getTaskService();
+    ManagementService managementService = rule.getManagementService();
 
     ProcessInstance pi = runtimeService.startProcessInstanceByKey("testProcess");
     assertFalse("Process instance should not be ended", pi.isEnded());
     assertEquals(1, runtimeService.createProcessInstanceQuery().count());
+    
+    EventSubscription eventSubscription = runtimeService.createEventSubscriptionQuery().singleResult();
+    assertNotNull(eventSubscription);
 
-    Task task = taskService.createTaskQuery().singleResult();
-    assertNotNull("Task should exist", task);
-
-    // complete the task
-    taskService.complete(task.getId());
+    executeAvailableJobs();
+    
+    Incident incident = runtimeService.createIncidentQuery().processInstanceId(pi.getId()).singleResult();
+    assertNotNull(incident);
+    
+    runtimeService.correlateMessage("cancel");
 
     // now the process instance should be ended
     assertEquals(0, runtimeService.createProcessInstanceQuery().count());
 
   }
 
+  public void executeAvailableJobs() {
+	    ManagementService managementService = rule.getManagementService();
+		List<Job> jobs = managementService.createJobQuery().withRetriesLeft().list();
+
+	    if (jobs.isEmpty()) {
+	      return;
+	    }
+
+	    for (Job job : jobs) {
+	      try {
+	        managementService.executeJob(job.getId());
+	      } catch (Exception e) {};
+	    }
+
+	    executeAvailableJobs();
+	  }
 }
