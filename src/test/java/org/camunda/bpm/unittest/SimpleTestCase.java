@@ -12,15 +12,22 @@
  */
 package org.camunda.bpm.unittest;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.RuntimeService;
-import org.camunda.bpm.engine.TaskService;
+import org.camunda.bpm.engine.impl.ProcessEngineImpl;
+import org.camunda.bpm.engine.impl.jobexecutor.ExecuteJobsRunnable;
+import org.camunda.bpm.engine.impl.util.LogUtil;
+import org.camunda.bpm.engine.runtime.Job;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
-import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.Deployment;
 import org.camunda.bpm.engine.test.ProcessEngineRule;
-
-import static org.junit.Assert.*;
-
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -30,29 +37,90 @@ import org.junit.Test;
  */
 public class SimpleTestCase {
 
+	// enable more detailed logging
+	static {
+	    LogUtil.readJavaUtilLoggingConfigFromClasspath();
+	}
+
   @Rule
   public ProcessEngineRule rule = new ProcessEngineRule();
 
   @Test
-  @Deployment(resources = {"testProcess.bpmn"})
-  public void shouldExecuteProcess() {
+  @Deployment(resources = {"testProcess.bpmn", "calledProcessWithAsyncServiceTask.bpmn"})
+  public void shouldExecuteProcess() throws InterruptedException {
 
     RuntimeService runtimeService = rule.getRuntimeService();
-    TaskService taskService = rule.getTaskService();
 
     ProcessInstance pi = runtimeService.startProcessInstanceByKey("testProcess");
     assertFalse("Process instance should not be ended", pi.isEnded());
-    assertEquals(1, runtimeService.createProcessInstanceQuery().count());
+    assertEquals(2, runtimeService.createProcessInstanceQuery().count());
+    
+    ManagementService managementService = rule.getManagementService();
+    assertEquals(2, managementService.createJobQuery().count());
 
-    Task task = taskService.createTaskQuery().singleResult();
-    assertNotNull("Task should exist", task);
+    for (Job job : managementService.createJobQuery().list()) {
+		System.out.println(job);
+	}
+    
+    Thread.sleep(3000);
 
-    // complete the task
-    taskService.complete(task.getId());
+//    executeAvailableJobs();
+    executeAvailableJobsMultiThreaded();
+    // see also: org.camunda.bpm.engine.test.concurrency.CompetingSignalsTest
 
+    Thread.sleep(3000);
+    for (Job job : managementService.createJobQuery().list()) {
+		System.out.println(job);
+	}
+    assertEquals(0, managementService.createJobQuery().withException().count());
+    assertEquals(0, managementService.createJobQuery().count());
     // now the process instance should be ended
     assertEquals(0, runtimeService.createProcessInstanceQuery().count());
 
   }
 
+  private void executeAvailableJobsMultiThreaded() {
+	  ManagementService managementService = rule.getManagementService();
+	  List<Job> jobs = managementService.createJobQuery().withRetriesLeft().list();
+	  
+	  if (jobs.isEmpty()) {
+		  return;
+	  }
+	  
+	  List<Thread> threads = new ArrayList<Thread>();
+	  
+	  for (Job job : jobs) {
+		  threads.add(
+				  new Thread(
+						  new ExecuteJobsRunnable(
+								  Arrays.asList(job.getId()),
+								  (ProcessEngineImpl) rule.getProcessEngine()
+						  )
+				  )
+		  );
+	  }
+	  
+	  for (Thread thread : threads) {
+		thread.start();
+	}
+	  
+//	  executeAvailableJobsMultiThreaded();
+  }
+
+  public void executeAvailableJobs() {
+	  ManagementService managementService = rule.getManagementService();
+	  List<Job> jobs = managementService.createJobQuery().withRetriesLeft().list();
+	  
+	  if (jobs.isEmpty()) {
+		  return;
+	  }
+	  
+	  for (Job job : jobs) {
+		  try {
+			  managementService.executeJob(job.getId());
+		  } catch (Exception e) {};
+	  }
+	  
+	  executeAvailableJobs();
+  }
 }

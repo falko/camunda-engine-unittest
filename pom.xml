@@ -13,7 +13,7 @@
         <type>pom</type>
         <scope>import</scope>
         <!-- set the version for camunda BPM here -->
-        <version>7.1.0-Final</version>
+        <version>7.2.0-alpha4</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -37,6 +37,12 @@
     </dependency>
 
   </dependencies>
-
+	<repositories>
+		<repository>
+			<id>camunda-bpm-nexus</id>
+			<name>camunda-bpm-nexus</name>
+			<url>https://app.camunda.com/nexus/content/groups/public</url>
+		</repository>
+	</repositories>
 </project>
 
