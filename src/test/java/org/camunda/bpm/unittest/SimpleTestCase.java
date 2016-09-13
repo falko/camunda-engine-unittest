@@ -15,6 +15,7 @@ package org.camunda.bpm.unittest;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.test.Deployment;
 import org.camunda.bpm.engine.test.ProcessEngineRule;
+import org.camunda.bpm.engine.test.mock.Mocks;
 
 import static org.camunda.bpm.engine.test.assertions.ProcessEngineTests.*;
 
@@ -33,19 +34,19 @@ public class SimpleTestCase {
   @Test
   @Deployment(resources = {"testProcess.bpmn"})
   public void shouldExecuteProcess() {
+    Mocks.register("throwBpmnErrorJavaDelegate", new ThrowBpmnErrorJavaDelegate());
+    
     // Given we create a new process instance
     ProcessInstance processInstance = runtimeService().startProcessInstanceByKey("testProcess");
     // Then it should be active
     assertThat(processInstance).isActive();
     // And it should be the only instance
     assertThat(processInstanceQuery().count()).isEqualTo(1);
-    // And there should exist just a single task within that process instance
-    assertThat(task(processInstance)).isNotNull();
+    
+    execute(job());
+    
+    assertThat(processInstance).isActive();
 
-    // When we complete that task
-    complete(task(processInstance));
-    // Then the process instance should be ended
-    assertThat(processInstance).isEnded();
   }
 
 }
